@@ -13,7 +13,8 @@ use tokio::sync::Mutex;
 use ui::{text, button};
 use utils::random_between;
 use vector::Vector;
-use std::{io::{Write, stdout}, thread::{sleep, self}, time::Duration, sync::{mpsc::{self, Receiver}, Arc}, rc::Rc, borrow::{BorrowMut, Borrow}, option::Iter};
+use std::{io::{stdout}, thread::{sleep}, time::Duration, sync::{Arc}};
+use std::io::Write;
 
 #[derive(Debug, PartialEq)]
 enum SnakeGameTickOutcome {
@@ -60,7 +61,7 @@ impl SnakeGame {
         let head_pos = self.snake.first().expect("Should always have at least one");
         let next_pos = head_pos + self.snake_direction;
 
-        if next_pos.x < 0 || next_pos.y < 0 || next_pos.x > self.size.x || next_pos.y > self.size.y {
+        if next_pos.x < 0 || next_pos.y < 0 || next_pos.x >= self.size.x || next_pos.y >= self.size.y {
             return SnakeGameTickOutcome::GameOver;
         }
 
@@ -93,19 +94,18 @@ impl SnakeGame {
 
 
 fn calculate_border_around(size: &Vector) -> Vec<(Vector, String)> {
-    // todo: Fix this. I think it's incorrectly adding a border with one extra space based on a visual bug
     let inner_width = size.x;
     let inner_height = size.y;
     let outer_width = size.x + 2;
     let border_char = "*".to_string();
-    let horizontal_border = std::iter::repeat("*").take(outer_width as usize + 1).collect::<String>();
+    let horizontal_border = std::iter::repeat("*").take(outer_width as usize).collect::<String>();
     let mut deets = vec![];
-    deets.push((v!(0, 0), horizontal_border.clone()));
-    for i in 1..inner_height + 2 {
-        deets.push((v!(0, i), border_char.clone()));
-        deets.push((v!(inner_width + 2, i), border_char.clone()));
+    deets.push((v!(-1, -1), horizontal_border.clone()));
+    for i in 0..inner_height + 1 {
+        deets.push((v!(-1, i), border_char.clone()));
+        deets.push((v!(inner_width, i), border_char.clone()));
     }
-    deets.push((v!(0, inner_height + 2), horizontal_border));
+    deets.push((v!(-1, inner_height), horizontal_border));
     deets
 }
 
@@ -124,7 +124,7 @@ async fn main() {
     let stdout = Arc::clone(&stdout_og);
     let game_size = v!(20, 10);
     let mut snake_game = SnakeGame::new(game_size);
-    let mut screen = GameScreen::Start;
+    let mut screen = GameScreen::Game;
 
     loop {
         let mut stdout = stdout.lock().await;
@@ -167,7 +167,7 @@ async fn main() {
             let game_offset = ((term_size - game_size) / v!(2, 2)).set_y(3);
             write_many_at!(
                 stdout,
-                game_offset - v!(1, 1),
+                game_offset,
                 calculate_border_around(&snake_game.size).iter()
             );
 
