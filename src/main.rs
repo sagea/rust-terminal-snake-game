@@ -1,98 +1,19 @@
 mod vector;
+mod utils;
+mod term;
+mod ui;
+
 #[macro_use]
 extern crate impl_ops;
 
-use termion::{raw::{IntoRawMode, RawTerminal}, input::{MouseTerminal, TermRead}, clear, cursor::{Goto, self}, async_stdin, event::{Event, Key, MouseEvent, MouseButton}, terminal_size};
+use term::{collect_events, key_press};
+
+use termion::{raw::{IntoRawMode}, input::{MouseTerminal}, clear, cursor::{Goto, self}, event::{Event, Key}, terminal_size};
 use tokio::sync::Mutex;
+use ui::{text, button};
+use utils::random_between;
 use vector::Vector;
-use std::{io::{Write, stdout, stdin, Stdin, Stdout}, thread::{sleep, self}, time::Duration, sync::{mpsc::{self, Receiver}, Arc}, rc::Rc, borrow::{BorrowMut, Borrow}, option::Iter};
-use rand::Rng;
-
-
-type OffthreadStdin = Receiver<Event>;
-fn offthread_stdin() -> OffthreadStdin {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let stdin = stdin();
-        for e in stdin.events() {
-            tx.send(e.unwrap()).unwrap();
-        }
-    });
-    rx
-}
-
-fn collect_events(stdin: &OffthreadStdin) -> Vec<Event> {
-    let mut events = vec![];
-    loop {
-        if let Ok(event) = stdin.try_recv() {
-            events.push(event);
-        } else {
-            return events;
-        }
-    }
-}
-
-fn key_press (events: &Vec<Event>, key: &Key) -> bool {
-    for event in events {
-        if let Event::Key(found_key) = event {
-            if found_key == key {
-                return true;
-            }
-        }
-    }
-    false
-}
-// fn presset_between(events: &Vec<Event>, mouse_button: MouseButton, pos)
-
-fn pressed_between(events: &Vec<Event>, start: Vector, end: Vector) -> bool {
-    for event in events {
-        if let Event::Mouse(MouseEvent::Press(_, x, y)) = event {
-            let x = *x as i32;
-            let y = *y as i32;
-            if x < start.x {
-                return false;
-            } else if x > end.x {
-                return false;
-            } else if y < start.y {
-                return false;
-            } else if y > end.y {
-                return false;
-            } else {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn is_outside_of_terminal(pos: &Vector) -> bool {
-    if let Ok((width, height)) = terminal_size() {
-        let width = width as i32;
-        let height = height as i32;
-        if pos.x < 1 {
-            true
-        } else if pos.y < 1 {
-            true
-        } else if pos.x > width {
-            true
-        } else if pos.y > height {
-            true
-        } else {
-            false
-        }
-    } else {
-        true
-    }
-}
-
-fn random_between(a: i32, b: i32) -> i32 {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(a..b)
-}
-
-fn find_good_food_location(start: &Vector, end: &Vector) -> Vector {
-    Vector { x: random_between(start.x, end.x), y: random_between(start.y, end.y) }
-}
+use std::{io::{Write, stdout}, thread::{sleep, self}, time::Duration, sync::{mpsc::{self, Receiver}, Arc}, rc::Rc, borrow::{BorrowMut, Borrow}, option::Iter};
 
 #[derive(Debug, PartialEq)]
 enum SnakeGameTickOutcome {
@@ -170,9 +91,7 @@ impl SnakeGame {
     }
 }
 
-fn char_len(str: &String) -> i32 {
-    str.chars().count() as i32
-}
+
 fn calculate_border_around(size: &Vector) -> Vec<(Vector, String)> {
     // todo: Fix this. I think it's incorrectly adding a border with one extra space based on a visual bug
     let inner_width = size.x;
@@ -190,54 +109,6 @@ fn calculate_border_around(size: &Vector) -> Vec<(Vector, String)> {
     deets
 }
 
-fn button(position: Vector, text: String, events: &Vec<Event>, on_click: impl FnOnce(), on_render: impl FnOnce(Vec<(Vector, String)>)) {
-    let text_len = char_len(&text);
-    let pos_offset = v!(text_len / 2, 0);
-    let pos_start = position - pos_offset;
-    let pos_end = position + pos_offset;
-    let deets = vec![(pos_start, text)];
-    if pressed_between(events, pos_start, pos_end) {
-        on_click();
-    }
-    on_render(deets);
-}
-
-fn text(position: Vector, text: String, on_render: impl FnOnce(Vec<(Vector, String)>)) {
-    let text_len = char_len(&text);
-    let pos_offset = v!(text_len / 2, 0);
-    let pos_start = position - pos_offset;
-    let deets = vec![(pos_start, text)];
-    on_render(deets);
-}
-
-macro_rules! write_at {
-    ($stdout:ident, $str:expr) => {
-        write!($stdout, "{}", $str).unwrap()
-    };
-    ($stdout:ident, $vec:expr, $str:expr) => {
-        write_at!($stdout, $vec.x, $vec.y, $str)
-    };
-
-    ($stdout:ident, $x:expr, $y:expr, $str:expr) => {
-        write!($stdout, "{}{}", termion::cursor::Goto($x as u16, $y as u16), $str).unwrap();
-    };
-}
-
-macro_rules! write_many_at {
-    ($stdout:ident, $lines:expr) => {
-        $lines.for_each(|(pos, text)| {
-            write_at!($stdout, pos, text);
-        })
-    };
-
-    ($stdout:ident, $offset:expr, $lines:expr) => {
-        write_many_at!(
-            $stdout,
-            $lines
-                .map(|(pos, text)| (pos + $offset, text))
-        )
-    };
-}
 
 #[derive(Debug, PartialEq)]
 enum GameScreen {
@@ -248,7 +119,7 @@ enum GameScreen {
 
 #[tokio::main]
 async fn main() {
-    let stdin = offthread_stdin();
+    let stdin = term::offthread_stdin();
     let stdout_og = Arc::new(Mutex::new(MouseTerminal::from(stdout().into_raw_mode().unwrap())));
     let stdout = Arc::clone(&stdout_og);
     let game_size = v!(20, 10);
