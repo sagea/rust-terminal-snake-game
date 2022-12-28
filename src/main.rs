@@ -139,27 +139,27 @@ async fn main() {
 
         if screen == GameScreen::Start {
             let center_pos = term_size / v!(2, 2);
-            text(center_pos.set_y(5), "Rust Snake!".to_string(), |lines| write_many_at!(stdout, lines.iter()));
-            button(
-                v!(term_size.x / 2, 8),
-                "Play".to_owned(),
-                &events,
-                || {
-                    screen = GameScreen::Game;
-                    snake_game = SnakeGame::new(game_size);
-                },
-                |lines| write_many_at!(stdout, lines.iter())
-            );
             let mut should_cancel = false;
-            button(
-                v!(term_size.x / 2, 9),
-                "Cancel".to_owned(),
-                &events,
-                || {
-                    should_cancel = true;
-                },
-                |lines| write_many_at!(stdout, lines.iter())
-            );
+            write_many_at!(stdout, [
+                &text(center_pos.set_y(5), "Rust Snake!".to_string())[..],
+                &button(
+                    v!(term_size.x / 2, 8),
+                    "Play".to_owned(),
+                    &events,
+                    || {
+                        screen = GameScreen::Game;
+                        snake_game = SnakeGame::new(game_size);
+                    }
+                )[..],
+                &button(
+                    v!(term_size.x / 2, 9),
+                    "Cancel".to_owned(),
+                    &events,
+                    || {
+                        should_cancel = true;
+                    }
+                )[..]
+            ].concat().iter());
             if should_cancel {
                 break;
             }
@@ -176,9 +176,12 @@ async fn main() {
             if result == SnakeGameTickOutcome::GameOver {
                 screen = GameScreen::GameOver;
             } else {
-                write_at!(stdout, v!(1, 1) + game_offset.set_y(0), "Score");
-                write_at!(stdout, snake_game.score);
-                write_at!(stdout, snake_game.get_food_pos() + game_offset, "§");
+
+                write_many_at!(stdout, [
+                    &text(v!(1, 1) + game_offset.set_y(0), format!("Score: {}", snake_game.score))[..],
+                    &text(snake_game.get_food_pos() + game_offset, "§".to_string())[..],
+                ].concat().iter());
+
                 write_many_at!(
                     stdout,
                     game_offset,
@@ -189,18 +192,19 @@ async fn main() {
             }
         } else if screen == GameScreen::GameOver {
             let center_pos = term_size / v!(2, 2);
-            text(center_pos.set_y(5), "Game Over".to_string(), |lines| write_many_at!(stdout, lines.iter()));
-            text(center_pos.set_y(6), format!("Final Score: {}", snake_game.score), |lines| write_many_at!(stdout, lines.iter()));
-            button(
-                v!(term_size.x / 2, 8),
-                "Play Again".to_owned(),
-                &events,
-                || {
-                    screen = GameScreen::Game;
-                    snake_game = SnakeGame::new(game_size);
-                },
-                |lines| write_many_at!(stdout, lines.iter())
-            );
+            write_many_at!(stdout, [
+                &text(center_pos.set_y(5), "Game Over".to_string())[..],
+                &text(center_pos.set_y(6), format!("Final Score: {}", snake_game.score))[..],
+                &button(
+                    v!(term_size.x / 2, 8),
+                    "Play Again".to_owned(),
+                    &events,
+                    || {
+                        screen = GameScreen::Game;
+                        snake_game = SnakeGame::new(game_size);
+                    }
+                )[..]
+            ].concat().iter());
         }
         write!(stdout, "{}", cursor::Hide).unwrap();
         stdout.flush().unwrap();
