@@ -137,75 +137,67 @@ async fn main() {
             break;
         }
 
-        if screen == GameScreen::Start {
+        let components = if screen == GameScreen::Start {
             let center_pos = term_size / v!(2, 2);
             let mut should_cancel = false;
-            write_many_at!(stdout, [
-                &text(center_pos.set_y(5), "Rust Snake!".to_string())[..],
-                &button(
-                    v!(term_size.x / 2, 8),
-                    "Play".to_owned(),
-                    &events,
-                    || {
-                        screen = GameScreen::Game;
-                        snake_game = SnakeGame::new(game_size);
-                    }
-                )[..],
-                &button(
-                    v!(term_size.x / 2, 9),
-                    "Cancel".to_owned(),
-                    &events,
-                    || {
-                        should_cancel = true;
-                    }
-                )[..]
-            ].concat().iter());
+            let mut comps = vec![];
+            comps.extend(text(center_pos.set_y(5), "Rust Snake!".to_string()));
+            comps.extend(button(
+                v!(term_size.x / 2, 8),
+                "Play".to_owned(),
+                &events,
+                || {
+                    screen = GameScreen::Game;
+                    snake_game = SnakeGame::new(game_size);
+                }
+            ));
+            comps.extend(button(
+                v!(term_size.x / 2, 9),
+                "Cancel".to_owned(),
+                &events,
+                || {
+                    should_cancel = true;
+                }
+            ));
             if should_cancel {
                 break;
             }
+            comps
         } else if screen == GameScreen::Game {
+            let mut comps = vec![];
             let game_offset = ((term_size - game_size) / v!(2, 2)).set_y(3);
-            write_many_at!(
-                stdout,
-                game_offset,
-                calculate_border_around(&snake_game.size).iter()
-            );
-
+            for (pos, text) in calculate_border_around(&snake_game.size) {
+                comps.push(((pos + game_offset), text));
+            }
             let result = snake_game.run_game_tick(&events);
-
             if result == SnakeGameTickOutcome::GameOver {
                 screen = GameScreen::GameOver;
-            } else {
-
-                write_many_at!(stdout, [
-                    &text(v!(1, 1) + game_offset.set_y(0), format!("Score: {}", snake_game.score))[..],
-                    &text(snake_game.get_food_pos() + game_offset, "§".to_string())[..],
-                ].concat().iter());
-
-                write_many_at!(
-                    stdout,
-                    game_offset,
-                    snake_game.snake
-                        .iter()
-                        .map(|pos| (pos, "▢".to_owned()))
-                );
             }
+            comps.extend(text(v!(1, 1) + game_offset.set_y(0), format!("Score: {}", snake_game.score)));
+            comps.extend(text(snake_game.get_food_pos() + game_offset, "§".to_string()));
+            for snake_bodypart_position in &snake_game.snake {
+                comps.extend(text(*snake_bodypart_position + game_offset, "▢".to_owned()))
+            }
+            comps
         } else if screen == GameScreen::GameOver {
             let center_pos = term_size / v!(2, 2);
-            write_many_at!(stdout, [
-                &text(center_pos.set_y(5), "Game Over".to_string())[..],
-                &text(center_pos.set_y(6), format!("Final Score: {}", snake_game.score))[..],
-                &button(
-                    v!(term_size.x / 2, 8),
-                    "Play Again".to_owned(),
-                    &events,
-                    || {
-                        screen = GameScreen::Game;
-                        snake_game = SnakeGame::new(game_size);
-                    }
-                )[..]
-            ].concat().iter());
-        }
+            let mut comps = vec![];
+            comps.extend(text(center_pos.set_y(5), "Game Over".to_string()));
+            comps.extend(text(center_pos.set_y(6), format!("Final Score: {}", snake_game.score)));
+            comps.extend(button(
+                v!(term_size.x / 2, 8),
+                "Play Again".to_owned(),
+                &events,
+                || {
+                    screen = GameScreen::Game;
+                    snake_game = SnakeGame::new(game_size);
+                }
+            ));
+            comps
+        } else {
+            vec![]
+        };
+        write_many_at!(stdout, components.iter());
         write!(stdout, "{}", cursor::Hide).unwrap();
         stdout.flush().unwrap();
         sleep(Duration::from_millis(200));
